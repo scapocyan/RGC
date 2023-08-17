@@ -177,7 +177,7 @@ def train(model,
 EPOCHS = 3
 
 # Set up the optimizer
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-4)
 
 # Train the model
 train(model, optimizer, criterion, EPOCHS, train_dataloader, val_dataloader)

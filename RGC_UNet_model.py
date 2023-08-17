@@ -45,6 +45,8 @@ class DownSample(nn.Module):
             nn.Dropout2d(p=drop_rate),
         )
 
+        nn.init.kaiming_normal_(self.conv_block_pool[0].weight, nonlinearity='relu')
+
     def forward(self, x):
         return self.conv_block_pool(x)
     
@@ -60,6 +62,8 @@ class UpSample(nn.Module):
             nn.Dropout2d(p=drop_rate),
             nn.Upsample(scale_factor=2),
         )
+
+        nn.init.kaiming_normal_(self.conv_block_up[0].weight, nonlinearity='relu')
 
     def forward(self, x):
         return self.conv_block_up(x)
@@ -78,6 +82,10 @@ class OutputBlock(nn.Module):
             nn.Conv2d(24, 1, 1),
             nn.Sigmoid()
         )
+
+        nn.init.kaiming_normal_(self.conv_block_out[0].weight, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.conv_block_out[3].weight, nonlinearity='relu')
+        nn.init.xavier_uniform_(self.conv_block_out[5].weight)
 
     def forward(self, x):
         return self.conv_block_out(x)
@@ -102,6 +110,7 @@ class RGC_UNet(nn.Module):
         self.out9 = OutputBlock(in_channels=200, out_channels=64)
         self.maxpool = nn.MaxPool2d(2)
         self.relu = nn.ReLU()
+
     
     def forward(self, x):
         block1 = self.down1(x)
