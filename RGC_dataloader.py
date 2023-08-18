@@ -13,8 +13,8 @@ class RGC_Dataset(Dataset):
         self.image_dir = image_dir
         self.label_dir = label_dir
         self.transform = transform
-        self.images = os.listdir(image_dir)
-        self.labels = os.listdir(label_dir)
+        self.images = sorted(os.listdir(image_dir))
+        self.labels = sorted(os.listdir(label_dir))
     
     def __len__(self):
         return len(self.images)
@@ -46,7 +46,7 @@ class RGC_Dataset(Dataset):
 
         # Image Normalization
         image = image.astype(np.double) # convert to float before normalization
-        image_mode = st.mode(image, axis=None)
+        image_mode = st.mode(image, axis=None, keepdims=False)
         image -= image_mode[0]
         image[image < 0] = 0
         image /= np.max(image)
@@ -54,7 +54,7 @@ class RGC_Dataset(Dataset):
 
         # Label normalization
         label = label.astype(np.double)
-        label_mode = st.mode(label, axis=None)
+        label_mode = st.mode(label, axis=None, keepdims=False)
         label -= label_mode[0]
         label[label < 0] = 0
         label /= np.max(label)
@@ -81,20 +81,20 @@ class RGC_Dataset(Dataset):
 
         return image, label
 
-# Load the dataset
-image_dir = r'C:\Users\Sam\Documents\Python Scripts\RGC\RGC_unadjusted_dataset\train_images'
-label_dir = r'C:\Users\Sam\Documents\Python Scripts\RGC\RGC_unadjusted_dataset\train_labels'
-training_images = RGC_Dataset(image_dir, label_dir, transform=None)
+# # Load the dataset
+# image_dir = r'C:\Users\Sam\Documents\Python Scripts\RGC\RGC_unadjusted_dataset\train_images'
+# label_dir = r'C:\Users\Sam\Documents\Python Scripts\RGC\RGC_unadjusted_dataset\train_labels'
+# training_images = RGC_Dataset(image_dir, label_dir, transform=None)
 
-torch.manual_seed(0)
+# torch.manual_seed(0)
 
-# Split the dataset into training and validation sets
-train_size = int(0.9 * len(training_images))
-val_size = len(training_images) - train_size
-train_dataset, val_dataset = torch.utils.data.random_split(training_images, [train_size, val_size])
+# # Split the dataset into training and validation sets
+# train_size = int(0.9 * len(training_images))
+# val_size = len(training_images) - train_size
+# train_dataset, val_dataset = torch.utils.data.random_split(training_images, [train_size, val_size])
 
-train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=True)
+# train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+# val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=True)
 
 # # Print the shape of the inputs in the dataloaders
 # for image, label in train_dataloader:
@@ -119,13 +119,13 @@ val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=True)
 # #         break
 # #     counter += 1
 
-# # # Display a random sample image and label
-# # image, label = train_dataset[56]
-# # plt.figure(1)
-# # plt.imshow(image, cmap='gray')
-# # plt.figure(2)
-# # plt.imshow(label, cmap='gray')
-# # plt.show()
+# # Display a random sample image and label
+# image, label = train_dataset[0]
+# plt.figure(1)
+# plt.imshow(image, cmap='gray')
+# plt.figure(2)
+# plt.imshow(label, cmap='gray')
+# plt.show()
 
 # # Print the size of the training and validation sets
 # print(f"Training set size: {len(train_dataset)}")

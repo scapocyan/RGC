@@ -111,6 +111,11 @@ class RGC_UNet(nn.Module):
         self.maxpool = nn.MaxPool2d(2)
         self.relu = nn.ReLU()
 
+        nn.init.kaiming_normal_(self.conv5.weight, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.conv6.weight, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.conv7.weight, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.conv8.weight, nonlinearity='relu')
+
     
     def forward(self, x):
         block1 = self.down1(x)

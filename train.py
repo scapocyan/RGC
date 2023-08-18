@@ -5,6 +5,9 @@ from RGC_dataloader import RGC_Dataset
 from RGC_UNet_model import RGC_UNet
 from tqdm import tqdm
 
+# Set the device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # Define the directory paths
 IMAGE_DIR = r'C:\Users\Sam\Documents\Python Scripts\RGC\RGC_unadjusted_dataset\train_images'
 LABEL_DIR = r'C:\Users\Sam\Documents\Python Scripts\RGC\RGC_unadjusted_dataset\train_labels'
@@ -67,6 +70,7 @@ def NPCC_loss(outputs, labels):
 # Define the model and loss
 model = RGC_UNet()
 model = model.double()
+model.to(device)
 criterion = NPCC_loss
 
 device = (
@@ -88,6 +92,8 @@ def evaluate(dataloader):
     for images, labels in dataloader:
         images = images.to(device)
         labels = labels.to(device)
+        images = images.unsqueeze(1)
+        labels = labels.unsqueeze(1)
 
         outputs = model(images)
 
