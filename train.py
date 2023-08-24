@@ -1,6 +1,13 @@
+import torch.distributed as dist
+
+# Initialize the distributed backend if using multiple GPUs
+if torch.cuda.device_count() > 1:
+    dist.init_process_group(backend="nccl")
+
 import torch
 import matplotlib.pyplot as plt
 import torch.optim as optim
+from torch.nn.parallel import DistributedDataParallel as DDP
 from RGC_dataloader import RGC_Dataset
 from RGC_UNet_model import RGC_UNet
 from tqdm import tqdm
@@ -29,7 +36,7 @@ train_dataset, val_dataset = torch.utils.data.random_split(training_set, [train_
 
 # Create the dataloaders
 train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True, pin_memory=True)
-val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=VALID_BATCH_SIZE, shuffle=True, pin_memory=True)
+val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=VALID_BATCH_SIZE, pin_memory=True)
 
 
 # Define Negative Pearson Correlation Coefficient loss
@@ -65,8 +72,8 @@ def NPCC_loss(outputs, labels):
     # Calculate the NPCC
     npcc_loss = torch.div(numerator, denominator)
 
-    # # Calculate the NPCC for the batch
-    # npcc_loss = npcc_loss.mean()
+    # Calculate the NPCC for the batch
+    npcc_loss = npcc_loss.mean()
 
     return npcc_loss
 
@@ -104,8 +111,8 @@ def PCC(outputs, labels):
     # Calculate the PCC
     pcc = torch.div(numerator, denominator)
 
-    # # Calculate the PCC for the batch
-    # pcc = pcc.mean()
+    # Calculate the PCC for the batch
+    pcc = pcc.mean()
 
     return pcc
 
@@ -114,6 +121,9 @@ def PCC(outputs, labels):
 model = RGC_UNet()
 model = model.double()
 model.to(device)
+if torch.cuda.device_count() > 1:
+    model = DDP(model)  
+
 criterion = NPCC_loss
 
 device = (
@@ -140,12 +150,23 @@ def evaluate(dataloader):
 
             outputs = model(images)
 
-            loss_sum += criterion(outputs, labels).sum()
-            pcc_sum += PCC(outputs, labels).sum()
+            loss_sum += criterion(outputs, labels)
+            pcc_sum += PCC(outputs, labels)
 
-    # Calculate the training and validation accuracies and losses
-    accuracy = pcc_sum.cpu() / len(dataloader.dataset)
-    total_loss = loss_sum.cpu() / len(dataloader.dataset)
+    # Synchronize loss and accuracy across all GPUs
+    if torch.cuda.device_count() > 1:
+        dist.reduce(loss_sum, dst=0)
+        dist.reduce(pcc_sum, dst=0)
+
+        if dist.get_rank() == 0:
+            total_loss = loss_sum / len(dataloader)
+            accuracy = pcc_sum / len(dataloader)
+
+    else:
+
+        # Calculate the training and validation accuracies and losses
+        accuracy = pcc_sum.cpu() / len(dataloader.dataset)
+        total_loss = loss_sum.cpu() / len(dataloader.dataset)
 
     if dataloader == train_dataloader:
         print(f"Train Accuracy: {accuracy:.2f}%, Train Loss: {total_loss:.5f}")
@@ -183,7 +204,6 @@ def train(model,
             # Forward pass
             outputs = model(images)
             loss = loss_fn(outputs, labels)
-            loss = torch.mean(loss)
 
             # Backward and optimize
             optimizer.zero_grad()
