@@ -1,10 +1,5 @@
-import os
 import torch
 from torch import nn
-from torch.nn import functional as F
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-
 
 
 # Define the general dense block
@@ -137,13 +132,3 @@ class RGC_UNet(nn.Module):
         image_prediction = self.out9(torch.cat([block1, upsample8], 1))
 
         return image_prediction
-
-# # Test to see if an image can be passed through the model
-# image = torch.rand(1, 1, 256, 256)
-# model = RGC_UNet()
-
-# # Print the size of the output
-# print(model(image).size())
-
-# Print the total number of parameters
-# print(sum(p.numel() for p in model.parameters() if p.requires_grad))
