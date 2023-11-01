@@ -1,143 +1,49 @@
-import torch.distributed as dist
-
-# Initialize the distributed backend if using multiple GPUs
-if torch.cuda.device_count() > 1:
-    dist.init_process_group(backend="nccl")
-
 import torch
 import matplotlib.pyplot as plt
 import torch.optim as optim
-from torch.nn.parallel import DistributedDataParallel as DDP
-from RGC_dataloader import RGC_Dataset
+from RGC_load_dataset import RGC_Dataset
 from RGC_UNet_model import RGC_UNet
 from tqdm import tqdm
+from RGC_loss_function import NPCC_loss
+from eval_metrics import PCC
 
 # Set the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Define the directory paths
-IMAGE_DIR = r'C:\Users\Sam\Documents\Python Scripts\RGC\RGC_unadjusted_dataset\train_images'
-LABEL_DIR = r'C:\Users\Sam\Documents\Python Scripts\RGC\RGC_unadjusted_dataset\train_labels'
+# Define the training and validation directories
+IMAGE_DIR = r'path\to\train\images'
+LABEL_DIR = r'path\to\train\labels'
+
+VAL_IMAGE_DIR = r'path\to\validation\images'
+VAL_LABEL_DIR = r'path\to\validation\labels'
 
 # Define the batch sizes
-TRAIN_BATCH_SIZE = 32
-VALID_BATCH_SIZE = 8
+TRAIN_BATCH_SIZE = 4
+VALID_BATCH_SIZE = 2
 
 # Load the dataset
-training_set = RGC_Dataset(IMAGE_DIR, LABEL_DIR, transform=None)
-
-train_size = int(0.9 * len(training_set))
-val_size = len(training_set) - train_size
+training_set = RGC_Dataset(IMAGE_DIR, LABEL_DIR)
+validation_set = RGC_Dataset(VAL_IMAGE_DIR, VAL_LABEL_DIR)
 
 # Set the random seed before splitting the dataset
 torch.manual_seed(0)
 
-train_dataset, val_dataset = torch.utils.data.random_split(training_set, [train_size, val_size])
-
 # Create the dataloaders
-train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True, pin_memory=True)
-val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=VALID_BATCH_SIZE, pin_memory=True)
-
-
-# Define Negative Pearson Correlation Coefficient loss
-def NPCC_loss(outputs, labels):
-    # Calculate the mean of the outputs and labels
-    outputs_mean = outputs.mean(dim=(2,3), keepdim=True)
-    labels_mean = labels.mean(dim=(2,3), keepdim=True)
-
-    # Subract the mean from the outputs and labels
-    outputs = outputs - outputs_mean
-    labels = labels - labels_mean
-
-    # Multiply the outputs and labels
-    outputs_labels = torch.mul(outputs, labels)
-
-    # Square the outputs and labels
-    outputs_squared = torch.square(outputs)
-    labels_squared = torch.square(labels)
-
-    # Calculate the sum of the elements in the outputs_labels, outputs_squared and labels_squared tensors
-    outputs_labels_sum = torch.sum(outputs_labels, dim=(2,3))
-    outputs_squared_sum = torch.sum(outputs_squared, dim=(2,3))
-    labels_squared_sum = torch.sum(labels_squared, dim=(2,3))
-
-    # Calculate the square root of outputs_squared_sum and labels_squared_sum
-    outputs_squared_sum_sqrt = torch.sqrt(outputs_squared_sum)
-    labels_squared_sum_sqrt = torch.sqrt(labels_squared_sum)
-
-    # Calculate the numerator and denominator
-    numerator = -1 * outputs_labels_sum
-    denominator = outputs_squared_sum_sqrt * labels_squared_sum_sqrt
-
-    # Calculate the NPCC
-    npcc_loss = torch.div(numerator, denominator)
-
-    # Calculate the NPCC for the batch
-    npcc_loss = npcc_loss.mean()
-
-    return npcc_loss
-
-
-# Define PCC as for evaluating performance
-def PCC(outputs, labels):
-    # Calculate the mean of the outputs and labels
-    outputs_mean = outputs.mean(dim=(2,3), keepdim=True)
-    labels_mean = labels.mean(dim=(2,3), keepdim=True)
-
-    # Subract the mean from the outputs and labels
-    outputs = outputs - outputs_mean
-    labels = labels - labels_mean
-
-    # Multiply the outputs and labels
-    outputs_labels = torch.mul(outputs, labels)
-
-    # Square the outputs and labels
-    outputs_squared = torch.square(outputs)
-    labels_squared = torch.square(labels)
-
-    # Calculate the sum of the elements in the outputs_labels, outputs_squared and labels_squared tensors
-    outputs_labels_sum = torch.sum(outputs_labels, dim=(2,3))
-    outputs_squared_sum = torch.sum(outputs_squared, dim=(2,3))
-    labels_squared_sum = torch.sum(labels_squared, dim=(2,3))
-
-    # Calculate the square root of outputs_squared_sum and labels_squared_sum
-    outputs_squared_sum_sqrt = torch.sqrt(outputs_squared_sum)
-    labels_squared_sum_sqrt = torch.sqrt(labels_squared_sum)
-
-    # Calculate the numerator and denominator
-    numerator = outputs_labels_sum
-    denominator = outputs_squared_sum_sqrt * labels_squared_sum_sqrt + 1e-10
-
-    # Calculate the PCC
-    pcc = torch.div(numerator, denominator)
-
-    # Calculate the PCC for the batch
-    pcc = pcc.mean()
-
-    return pcc
-
+train_dataloader = torch.utils.data.DataLoader(training_set, batch_size=TRAIN_BATCH_SIZE, shuffle=True, pin_memory=True)
+val_dataloader = torch.utils.data.DataLoader(validation_set, batch_size=VALID_BATCH_SIZE, pin_memory=True)
 
 # Define the model and loss
 model = RGC_UNet()
 model = model.double()
 model.to(device)
-if torch.cuda.device_count() > 1:
-    model = DDP(model)  
 
 criterion = NPCC_loss
 
-device = (
-    "cuda"
-    if torch.cuda.is_available()
-    else "mps"
-    if torch.backends.mps.is_available()
-    else "cpu"
-)
-print(f"Using {device} device")
-
-
 # Evaluating data to get the train/test accuracy and train/test loss
 def evaluate(dataloader):
+    # Set model to evaluate mode
+    model.eval()
+    
     loss_sum = 0
     pcc_sum = 0
 
@@ -145,33 +51,23 @@ def evaluate(dataloader):
         for images, labels in dataloader:
             images = images.to(device)
             labels = labels.to(device)
-            images = images.view(-1, 1, 256, 256)
-            labels = labels.view(-1, 1, 256, 256)
+            images = images.view(-1, 1, 512, 512)
+            labels = labels.view(-1, 1, 512, 512)
 
             outputs = model(images)
 
             loss_sum += criterion(outputs, labels)
             pcc_sum += PCC(outputs, labels)
 
-    # Synchronize loss and accuracy across all GPUs
-    if torch.cuda.device_count() > 1:
-        dist.reduce(loss_sum, dst=0)
-        dist.reduce(pcc_sum, dst=0)
-
-        if dist.get_rank() == 0:
-            total_loss = loss_sum / len(dataloader)
-            accuracy = pcc_sum / len(dataloader)
-
-    else:
-
-        # Calculate the training and validation accuracies and losses
-        accuracy = pcc_sum.cpu() / len(dataloader.dataset)
-        total_loss = loss_sum.cpu() / len(dataloader.dataset)
+    # Calculate the training and validation accuracies and losses
+    accuracy = pcc_sum.cpu() / len(dataloader)
+    print_accuracy = accuracy * 100
+    total_loss = loss_sum.cpu() / len(dataloader)
 
     if dataloader == train_dataloader:
-        print(f"Train Accuracy: {accuracy:.2f}%, Train Loss: {total_loss:.5f}")
+        print(f"Train Accuracy: {print_accuracy:.2f}%, Train Loss: {total_loss:.5f}")
     elif dataloader == val_dataloader:
-        print(f"Validation Accuracy: {accuracy:.2f}%, Validation Loss: {total_loss:.5f}")
+        print(f"Validation Accuracy: {print_accuracy:.2f}%, Validation Loss: {total_loss:.5f}\n")
 
     return accuracy, total_loss
 
@@ -192,14 +88,18 @@ def train(model,
 
     for epoch in range(epochs):
         print(f"Epoch {epoch + 1}/{epochs}\n-------------------------------")
-
+        
+        # Set model to train mode
+        model.train()
+        
+        # tqdm for progress bars
         loop = tqdm(train_dataloader)
-
+        
         for batch, (images, labels) in enumerate(loop):
             images = images.to(device)
             labels = labels.to(device)
-            images = images.view(-1, 1, 256, 256)
-            labels = labels.view(-1, 1, 256, 256)
+            images = images.view(-1, 1, 512, 512)
+            labels = labels.view(-1, 1, 512, 512)
 
             # Forward pass
             outputs = model(images)
@@ -209,7 +109,7 @@ def train(model,
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
+        
         # Evaluate the model
         train_accuracy, train_loss = evaluate(train_dataloader)
         val_accuracy, val_loss = evaluate(val_dataloader)
@@ -224,7 +124,7 @@ def train(model,
     plt.figure(1)
     plt.plot(train_accuracies, label='Train')
     plt.plot(val_accuracies, label='Validation')
-    plt.title('Train and Validation Accuracies')
+    plt.title('Training and Validation Accuracies')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     plt.legend()
@@ -233,7 +133,7 @@ def train(model,
     plt.figure(2)
     plt.plot(train_losses, label='Train')
     plt.plot(val_losses, label='Validation')
-    plt.title('Train and Validation Losses')
+    plt.title('Training and Validation Losses')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
@@ -241,11 +141,10 @@ def train(model,
 
 
 # Hyperparameters
-EPOCHS = 3
+EPOCHS = 50
 
 # Set up the optimizer
 optimizer = optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-4)
 
 # Train the model
 train(model, optimizer, criterion, EPOCHS, train_dataloader, val_dataloader)
-
